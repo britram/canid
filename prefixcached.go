@@ -3,15 +3,32 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	//"flag"
-	"fmt"
-	"io"
+	"flag"
+	//"fmt"
+	//"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	//"strconv"
 )
+
+// Structure partially covering the output of RIPEstat's prefix overview and
+// geolocation API calls, for decoding JSON reponses from RIPEstat.
+
+type RipeStatResponse struct {
+	Status string
+	Data   struct {
+		Resource string
+		ASNs     []struct {
+			ASN int
+		}
+		Locations []struct {
+			Country string
+		}
+	}
+}
+
+// Prefix information
 
 type PrefixInfo struct {
 	Prefix      string
@@ -19,141 +36,140 @@ type PrefixInfo struct {
 	CountryCode string
 }
 
-type PrefixMap map[string]PrefixInfo
-
 // RIPEstat backend
 
 const ripeStatPrefixURL = "https://stat.ripe.net/data/prefix-overview/data.json"
 const ripeStatGeolocURL = "https://stat.ripe.net/data/geoloc/data.json"
 
-func parseRipeStatPrefixOverview(body io.ReadCloser, out *PrefixInfo) (err error) {
+func call_ripestat(apiurl string, addr net.IP, out *PrefixInfo) error {
 
-	doc := make(map[string]interface{})
-
-	dec := json.NewDecoder(body)
-	err = dec.Decode(&doc)
-	if err != nil {
-		return
-	}
-
-	log.Printf("got prefix doc %#v", doc)
-
-	datax, ok := doc["data"]
-	if !ok {
-		err = errors.New("missing data in prefix-overview")
-		return
-	}
-	data := datax.(map[string]interface{})
-
-	pfx := data["resource"].(string)
-	if len(out.Prefix) == 0 {
-		out.Prefix = pfx
-	} else if pfx != out.Prefix {
-		err = errors.New("prefix mismatch in prefix-overview")
-	}
-
-	out.Prefix = data["resource"].(string)
-
-	asarrayx, ok := data["asns"]
-	if ok {
-		asarray := asarrayx.([]interface{})
-		out.ASN = int(asarray[0].(map[string]interface{})["asn"].(float64))
-	}
-
-	return
-}
-
-func parseRipeStatGeoloc(body io.ReadCloser, out *PrefixInfo) (err error) {
-
-	doc := make(map[string]interface{})
-
-	dec := json.NewDecoder(body)
-	err = dec.Decode(&doc)
-	if err != nil {
-		return
-	}
-
-	log.Printf("got geoloc doc %#v", doc)
-
-	datax, ok := doc["data"]
-	if !ok {
-		err = errors.New("missing data in geoloc")
-		return
-	}
-	data := datax.(map[string]interface{})
-
-	pfx := data["resource"].(string)
-	if len(out.Prefix) == 0 {
-		out.Prefix = pfx
-	}
-
-	locarrayx, ok := data["locations"]
-	if ok {
-		locarray := locarrayx.([]interface{})
-		out.CountryCode = locarray[0].(map[string]interface{})["country"].(string)
-	}
-
-	return
-}
-
-func lookupRipeStat(addr net.IP) (out PrefixInfo, err error) {
-
+	// construct a query string and add it to the URL
 	v := make(url.Values)
-
 	v.Add("resource", addr.String())
-
-	// step 1, prefix overview
-	// add query string
-	var prefixUrl *url.URL
-	prefixUrl, err = url.Parse(ripeStatPrefixURL)
+	fullUrl, err := url.Parse(apiurl)
 	if err != nil {
-		return
+		return err
 	}
-	prefixUrl.RawQuery = v.Encode()
+	fullUrl.RawQuery = v.Encode()
 
-	// make API call
-	var resp *http.Response
-	resp, err = http.Get(prefixUrl.String())
+	log.Printf("calling ripestat %s", fullUrl.String())
+
+	resp, err := http.Get(fullUrl.String())
 	if err != nil {
-		return
+		return err
 	}
 
-	// parse output
-	err = parseRipeStatPrefixOverview(resp.Body, &out)
+	// and now we have a response, parse it
+	var doc RipeStatResponse
+	dec := json.NewDecoder(resp.Body)
+	err = dec.Decode(&doc)
 	if err != nil {
-		return
+		return err
 	}
 
-	// step 2, geolocation
-	// add query string
-	prefixUrl, err = url.Parse(ripeStatGeolocURL)
-	if err != nil {
-		return
-	}
-	prefixUrl.RawQuery = v.Encode()
-
-	// make API call
-	resp, err = http.Get(prefixUrl.String())
-	if err != nil {
-		return
+	// don't even bother if the server told us to go away
+	if doc.Status != "ok" {
+		return errors.New("RIPEstat request failed with status " + doc.Status)
 	}
 
-	// parse output
-	err = parseRipeStatGeoloc(resp.Body, &out)
-	if err != nil {
-		return
+	// store the prefix, if not already present
+	if len(out.Prefix) == 0 {
+		out.Prefix = doc.Data.Resource
 	}
 
+	// get the first AS number, if present
+	for _, asn := range doc.Data.ASNs {
+		out.ASN = asn.ASN
+		break
+	}
+
+	// get the first country code, if present
+	for _, location := range doc.Data.Locations {
+		out.CountryCode = location.Country
+		break
+	}
+
+	return nil
+}
+
+func lookup_ripestat(addr net.IP) (out PrefixInfo, err error) {
+	err = call_ripestat(ripeStatPrefixURL, addr, &out)
+	if err == nil {
+		call_ripestat(ripeStatGeolocURL, addr, &out)
+	}
 	return
+}
+
+// Map of prefixes to information about them, stored by prefix.
+
+type PrefixCache map[string]PrefixInfo
+
+func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
+
+	// Determine starting prefix
+	var prefixlen, addrbits int
+	if len(addr) == 4 {
+		prefixlen = 24
+		addrbits = 32
+	} else {
+		prefixlen = 48
+		addrbits = 128
+	}
+
+	// Iterate through prefixes looking for a match
+
+	for i := prefixlen; i > 0; i-- {
+		mask := net.CIDRMask(prefixlen, addrbits)
+		net := net.IPNet{addr.Mask(mask), mask}
+		prefix := net.String()
+
+		out, ok := (*cache)[prefix]
+		if ok {
+			log.Printf("cache hit! for prefix %s", prefix)
+			return out, nil
+		}
+		log.Printf("cache miss for prefix %s", prefix)
+	}
+
+	// Cache miss, go ask RIPE
+	out, err = lookup_ripestat(addr)
+	if err != nil {
+		return
+	}
+
+	// cache and return
+	(*cache)[out.Prefix] = out
+	return
+}
+
+func (cache *PrefixCache) lookup_server(w http.ResponseWriter, req *http.Request) {
+
+	ip := net.ParseIP(req.URL.Query().Get("addr"))
+	if ip == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	prefix_info, err := cache.lookup(ip)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		error_struct := struct{ Error string }{err.Error()}
+		error_body, _ := json.Marshal(error_struct)
+		w.Write(error_body)
+		return
+	}
+
+	prefix_body, _ := json.Marshal(prefix_info)
+	w.Write(prefix_body)
 }
 
 func main() {
-	pi, err := lookupRipeStat(net.ParseIP("5.148.172.66"))
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	flag.Parse()
 
-	fmt.Printf("%s is in %s (AS %d) (CC %2s)\n", "5.148.172.66", pi.Prefix, pi.ASN, pi.CountryCode)
+	cache := make(PrefixCache)
+
+	http.HandleFunc("/prefix.json", cache.lookup_server)
+	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
 // API frontend
