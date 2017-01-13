@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	//"fmt"
-	//"io"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
+	"strings"
+	"time"
 )
 
 // Structure partially covering the output of RIPEstat's prefix overview and
@@ -34,6 +37,7 @@ type PrefixInfo struct {
 	Prefix      string
 	ASN         int
 	CountryCode string
+	Cached      time.Time
 }
 
 // RIPEstat backend
@@ -41,7 +45,7 @@ type PrefixInfo struct {
 const ripeStatPrefixURL = "https://stat.ripe.net/data/prefix-overview/data.json"
 const ripeStatGeolocURL = "https://stat.ripe.net/data/geoloc/data.json"
 
-func call_ripestat(apiurl string, addr net.IP, out *PrefixInfo) error {
+func callRipestat(apiurl string, addr net.IP, out *PrefixInfo) error {
 
 	// construct a query string and add it to the URL
 	v := make(url.Values)
@@ -92,10 +96,10 @@ func call_ripestat(apiurl string, addr net.IP, out *PrefixInfo) error {
 	return nil
 }
 
-func lookup_ripestat(addr net.IP) (out PrefixInfo, err error) {
-	err = call_ripestat(ripeStatPrefixURL, addr, &out)
+func lookupRipestat(addr net.IP) (out PrefixInfo, err error) {
+	err = callRipestat(ripeStatPrefixURL, addr, &out)
 	if err == nil {
-		call_ripestat(ripeStatGeolocURL, addr, &out)
+		callRipestat(ripeStatGeolocURL, addr, &out)
 	}
 	return
 }
@@ -106,20 +110,20 @@ type PrefixCache map[string]PrefixInfo
 
 func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 
-	// Determine starting prefix
+	// Determine starting prefix by guessing whether this is v6 or not
 	var prefixlen, addrbits int
-	if len(addr) == 4 {
-		prefixlen = 24
-		addrbits = 32
-	} else {
+	if strings.Contains(addr.String(), ":") {
 		prefixlen = 48
 		addrbits = 128
+	} else {
+		prefixlen = 24
+		addrbits = 32
 	}
 
 	// Iterate through prefixes looking for a match
 
 	for i := prefixlen; i > 0; i-- {
-		mask := net.CIDRMask(prefixlen, addrbits)
+		mask := net.CIDRMask(i, addrbits)
 		net := net.IPNet{addr.Mask(mask), mask}
 		prefix := net.String()
 
@@ -128,21 +132,23 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 			log.Printf("cache hit! for prefix %s", prefix)
 			return out, nil
 		}
-		log.Printf("cache miss for prefix %s", prefix)
 	}
 
 	// Cache miss, go ask RIPE
-	out, err = lookup_ripestat(addr)
+	out, err = lookupRipestat(addr)
 	if err != nil {
 		return
 	}
 
 	// cache and return
+	out.Cached = time.Now().UTC()
 	(*cache)[out.Prefix] = out
+	log.Printf("cached %s -> %v", out.Prefix, out)
+
 	return
 }
 
-func (cache *PrefixCache) lookup_server(w http.ResponseWriter, req *http.Request) {
+func (cache *PrefixCache) lookupServer(w http.ResponseWriter, req *http.Request) {
 
 	ip := net.ParseIP(req.URL.Query().Get("addr"))
 	if ip == nil {
@@ -163,13 +169,61 @@ func (cache *PrefixCache) lookup_server(w http.ResponseWriter, req *http.Request
 	w.Write(prefix_body)
 }
 
+func (cache *PrefixCache) undump(in io.Reader) error {
+	dec := json.NewDecoder(in)
+	return dec.Decode(cache)
+}
+
+func (cache *PrefixCache) dump(out io.Writer) error {
+	enc := json.NewEncoder(out)
+	return enc.Encode(*cache)
+}
+
 func main() {
-	flag.Parse()
+	fileflag := flag.String("file", "", "backing store for cache (JSON file)")
+
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
 
 	cache := make(PrefixCache)
 
-	http.HandleFunc("/prefix.json", cache.lookup_server)
-	log.Fatal(http.ListenAndServe(":8081", nil))
-}
+	flag.Parse()
 
-// API frontend
+	// undump cache if filename given
+	if len(*fileflag) > 0 {
+		infile, ferr := os.Open(*fileflag)
+		if ferr == nil {
+			cerr := cache.undump(infile)
+			infile.Close()
+			if cerr != nil {
+				log.Fatal(cerr)
+			}
+			log.Printf("loaded cache from %s", *fileflag)
+		} else {
+			log.Printf("unable to read backing file %s : %s", *fileflag, ferr.Error())
+		}
+	}
+
+	go func() {
+		http.HandleFunc("/prefix.json", cache.lookupServer)
+		log.Fatal(http.ListenAndServe(":8081", nil))
+	}()
+
+	_ = <-interrupt
+	log.Printf("terminating on interrupt")
+
+	// dump cache if filename given
+	if len(*fileflag) > 0 {
+		outfile, ferr := os.Create(*fileflag)
+		if ferr == nil {
+			cerr := cache.dump(outfile)
+			outfile.Close()
+			if cerr != nil {
+				log.Fatal(cerr)
+			}
+			log.Printf("dumped cache to %s", *fileflag)
+		} else {
+			log.Fatalf("unable to write backing file %s : %s", *fileflag, ferr.Error())
+		}
+	}
+}
