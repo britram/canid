@@ -108,7 +108,10 @@ func lookupRipestat(addr net.IP) (out PrefixInfo, err error) {
 
 type PrefixCache map[string]PrefixInfo
 
+const CACHE_TIMEOUT = 60
+
 func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
+	// FIXME concurrency on the underlying map, determine how ListenAndServe works...
 
 	// Determine starting prefix by guessing whether this is v6 or not
 	var prefixlen, addrbits int
@@ -121,7 +124,6 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 	}
 
 	// Iterate through prefixes looking for a match
-
 	for i := prefixlen; i > 0; i-- {
 		mask := net.CIDRMask(i, addrbits)
 		net := net.IPNet{addr.Mask(mask), mask}
@@ -129,8 +131,14 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 
 		out, ok := (*cache)[prefix]
 		if ok {
-			log.Printf("cache hit! for prefix %s", prefix)
-			return out, nil
+			// check for expiry
+			if time.Since(out.Cached).Minutes() > CACHE_TIMEOUT {
+				log.Printf("entry expired for prefix %s", prefix)
+				delete((*cache), prefix)
+			} else {
+				log.Printf("cache hit! for prefix %s", prefix)
+				return out, nil
+			}
 		}
 	}
 
@@ -143,7 +151,7 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 	// cache and return
 	out.Cached = time.Now().UTC()
 	(*cache)[out.Prefix] = out
-	log.Printf("cached %s -> %v", out.Prefix, out)
+	log.Printf("cached prefix %s -> %v", out.Prefix, out)
 
 	return
 }
@@ -179,13 +187,52 @@ func (cache *PrefixCache) dump(out io.Writer) error {
 	return enc.Encode(*cache)
 }
 
+// Map of names to addresses
+
+type AddressInfo struct {
+	Name      string
+	Addresses []net.IP
+	Cached    time.Time
+}
+
+type AddressCache map[string]AddressInfo
+
+func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
+	// Cache lookup
+	var ok bool
+	out, ok = cache[name]
+	if ok {
+		// check for expiry
+		if time.Since(out.Cached).Minutes() > CACHE_TIMEOUT {
+			log.Printf("entry expired for prefix %s", prefix)
+			delete((*cache), prefix)
+		} else {
+			log.Printf("cache hit! for prefix %s", prefix)
+			return
+		}
+	}
+
+	// Cache miss. Lookup.
+	var addrs []net.IP
+	var ainfo AddressInfo
+	addrs, err = net.LookupIP(name)
+	if err == nil {
+		ainfo.Addresses = addrs
+		ainfo.Name = name
+		ainfo.Cached = time.Now().UTC()
+	} else {
+
+	}
+
+}
+
 func main() {
 	fileflag := flag.String("file", "", "backing store for cache (JSON file)")
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	cache := make(PrefixCache)
+	pcache := make(PrefixCache)
 
 	flag.Parse()
 
@@ -193,19 +240,19 @@ func main() {
 	if len(*fileflag) > 0 {
 		infile, ferr := os.Open(*fileflag)
 		if ferr == nil {
-			cerr := cache.undump(infile)
+			cerr := pcache.undump(infile)
 			infile.Close()
 			if cerr != nil {
 				log.Fatal(cerr)
 			}
-			log.Printf("loaded cache from %s", *fileflag)
+			log.Printf("loaded prefix cache from %s", *fileflag)
 		} else {
 			log.Printf("unable to read backing file %s : %s", *fileflag, ferr.Error())
 		}
 	}
 
 	go func() {
-		http.HandleFunc("/prefix.json", cache.lookupServer)
+		http.HandleFunc("/prefix.json", pcache.lookupServer)
 		log.Fatal(http.ListenAndServe(":8081", nil))
 	}()
 
@@ -216,7 +263,7 @@ func main() {
 	if len(*fileflag) > 0 {
 		outfile, ferr := os.Create(*fileflag)
 		if ferr == nil {
-			cerr := cache.dump(outfile)
+			cerr := pcache.dump(outfile)
 			outfile.Close()
 			if cerr != nil {
 				log.Fatal(cerr)

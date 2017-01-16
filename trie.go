@@ -4,6 +4,9 @@ import (
 	"strings"
 )
 
+// Trie for storing fast lookups of information by prefix.
+// Not yet tested or integrated with canid.
+
 type Trie struct {
 	sub  [2]*Trie
 	data *map[string]string
