@@ -282,6 +282,19 @@ func (storage *CanidStorage) dump(out io.Writer) error {
 	return enc.Encode(*storage)
 }
 
+func newStorage(expiry int) *CanidStorage {
+	storage := new(CanidStorage)
+	storage.Version = CANID_STORAGE_VERSION
+	storage.Prefixes = new(PrefixCache)
+	storage.Prefixes.Data = make(map[string]PrefixInfo)
+	storage.Prefixes.expiry = expiry
+	storage.Addresses = new(AddressCache)
+	storage.Addresses.Data = make(map[string]AddressInfo)
+	storage.Addresses.prefixes = storage.Prefixes
+	storage.Addresses.expiry = expiry
+	return storage
+}
+
 func main() {
 	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
 	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
@@ -291,15 +304,7 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt)
 
 	// allocate and link cache
-	storage := new(CanidStorage)
-	storage.Version = CANID_STORAGE_VERSION
-	storage.Prefixes = new(PrefixCache)
-	storage.Prefixes.Data = make(map[string]PrefixInfo)
-	storage.Prefixes.expiry = *expiryflag
-	storage.Addresses = new(AddressCache)
-	storage.Addresses.Data = make(map[string]AddressInfo)
-	storage.Addresses.prefixes = storage.Prefixes
-	storage.Addresses.expiry = *expiryflag
+	storage := newStorage(*expiryflag)
 
 	// parse command line
 	flag.Parse()
