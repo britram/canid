@@ -298,6 +298,7 @@ func newStorage(expiry int) *CanidStorage {
 func main() {
 	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
 	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
+	listenflag := flag.String("listen", ":8081", "address to listen for requests")
 
 	// set up sigterm handling
 	interrupt := make(chan os.Signal, 1)
@@ -329,11 +330,33 @@ func main() {
 		log.Fatal("storage version mismatch for cache file %s: delete and try again", *fileflag)
 	}
 
-	go func() {
-		http.HandleFunc("/prefix.json", storage.Prefixes.lookupServer)
-		http.HandleFunc("/address.json", storage.Addresses.lookupServer)
-		log.Fatal(http.ListenAndServe(":8081", nil))
-	}()
+	go func(srvAddr string) {
+		srvMux := http.NewServeMux()
+		srvMux.HandleFunc("/prefix.json", storage.Prefixes.lookupServer)
+		srvMux.HandleFunc("/address.json", storage.Addresses.lookupServer)
+		srv := &http.Server{
+			Addr:           srvAddr,
+			Handler:        srvMux,
+			ReadTimeout:    10 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			MaxHeaderBytes: 1 << 20,
+		}
+
+		var proto string
+		if srv.Addr == "" {
+			srv.Addr = ":http"
+		}
+		if strings.Contains(srv.Addr, "/") {
+			proto = "unix"
+		} else {
+			proto = "tcp"
+		}
+		l, e := net.Listen(proto, srv.Addr)
+		if e != nil {
+			log.Fatal(e)
+		}
+		log.Fatal(srv.Serve(l))
+	}(*listenflag)
 
 	_ = <-interrupt
 	log.Printf("terminating on interrupt")
