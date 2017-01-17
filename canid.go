@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,13 +107,13 @@ func lookupRipestat(addr net.IP) (out PrefixInfo, err error) {
 
 // Map of prefixes to information about them, stored by prefix.
 
-type PrefixCache map[string]PrefixInfo
-
-const CACHE_TIMEOUT = 60
+type PrefixCache struct {
+	Data   map[string]PrefixInfo
+	lock   sync.RWMutex
+	expiry int
+}
 
 func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
-	// FIXME concurrency on the underlying map, determine how ListenAndServe works...
-
 	// Determine starting prefix by guessing whether this is v6 or not
 	var prefixlen, addrbits int
 	if strings.Contains(addr.String(), ":") {
@@ -129,12 +130,16 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 		net := net.IPNet{addr.Mask(mask), mask}
 		prefix := net.String()
 
-		out, ok := (*cache)[prefix]
+		cache.lock.RLock()
+		out, ok := cache.Data[prefix]
+		cache.lock.RUnlock()
 		if ok {
 			// check for expiry
-			if time.Since(out.Cached).Minutes() > CACHE_TIMEOUT {
+			if int(time.Since(out.Cached).Seconds()) > cache.expiry {
 				log.Printf("entry expired for prefix %s", prefix)
-				delete((*cache), prefix)
+				cache.lock.Lock()
+				delete(cache.Data, prefix)
+				cache.lock.Unlock()
 			} else {
 				log.Printf("cache hit! for prefix %s", prefix)
 				return out, nil
@@ -150,7 +155,9 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 
 	// cache and return
 	out.Cached = time.Now().UTC()
-	(*cache)[out.Prefix] = out
+	cache.lock.Lock()
+	cache.Data[out.Prefix] = out
+	cache.lock.Unlock()
 	log.Printf("cached prefix %s -> %v", out.Prefix, out)
 
 	return
@@ -177,16 +184,6 @@ func (cache *PrefixCache) lookupServer(w http.ResponseWriter, req *http.Request)
 	w.Write(prefix_body)
 }
 
-func (cache *PrefixCache) undump(in io.Reader) error {
-	dec := json.NewDecoder(in)
-	return dec.Decode(cache)
-}
-
-func (cache *PrefixCache) dump(out io.Writer) error {
-	enc := json.NewEncoder(out)
-	return enc.Encode(*cache)
-}
-
 // Map of names to addresses
 
 type AddressInfo struct {
@@ -195,64 +192,141 @@ type AddressInfo struct {
 	Cached    time.Time
 }
 
-type AddressCache map[string]AddressInfo
+type AddressCache struct {
+	Data     map[string]AddressInfo
+	lock     sync.RWMutex
+	prefixes *PrefixCache
+	expiry   int
+}
 
 func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
 	// Cache lookup
 	var ok bool
-	out, ok = cache[name]
+	cache.lock.RLock()
+	out, ok = cache.Data[name]
+	cache.lock.RUnlock()
 	if ok {
 		// check for expiry
-		if time.Since(out.Cached).Minutes() > CACHE_TIMEOUT {
-			log.Printf("entry expired for prefix %s", prefix)
-			delete((*cache), prefix)
+		if int(time.Since(out.Cached).Seconds()) > cache.expiry {
+			log.Printf("entry expired for name %s", name)
+			cache.lock.Lock()
+			delete(cache.Data, name)
+			cache.lock.Unlock()
 		} else {
-			log.Printf("cache hit! for prefix %s", prefix)
+			log.Printf("cache hit for name %s", name)
 			return
 		}
 	}
 
 	// Cache miss. Lookup.
 	var addrs []net.IP
-	var ainfo AddressInfo
+	out.Name = name
 	addrs, err = net.LookupIP(name)
 	if err == nil {
-		ainfo.Addresses = addrs
-		ainfo.Name = name
-		ainfo.Cached = time.Now().UTC()
+		// we have addresses. precache prefix information.
+		out.Addresses = addrs
+		// precache prefixes, ignoring results
+		for _, addr := range addrs {
+			_, _ = cache.prefixes.lookup(addr)
+		}
 	} else {
-
+		out.Addresses = nil
+		log.Printf("error looking up %s: %s", name, err.Error())
 	}
 
+	// cache and return
+	out.Cached = time.Now().UTC()
+	cache.lock.Lock()
+	cache.Data[out.Name] = out
+	cache.lock.Unlock()
+	log.Printf("cached name %s -> %v", out.Name, out)
+	return
+}
+
+func (cache *AddressCache) lookupServer(w http.ResponseWriter, req *http.Request) {
+	// TODO figure out how to duplicate less code here
+	name := req.URL.Query().Get("name")
+	if len(name) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	addr_info, err := cache.lookup(name)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		error_struct := struct{ Error string }{err.Error()}
+		error_body, _ := json.Marshal(error_struct)
+		w.Write(error_body)
+		return
+	}
+
+	addr_body, _ := json.Marshal(addr_info)
+	w.Write(addr_body)
+}
+
+const CANID_STORAGE_VERSION = 1
+
+type CanidStorage struct {
+	Version   int
+	Prefixes  *PrefixCache
+	Addresses *AddressCache
+}
+
+func (storage *CanidStorage) undump(in io.Reader) error {
+	dec := json.NewDecoder(in)
+	return dec.Decode(storage)
+}
+
+func (storage *CanidStorage) dump(out io.Writer) error {
+	enc := json.NewEncoder(out)
+	return enc.Encode(*storage)
 }
 
 func main() {
-	fileflag := flag.String("file", "", "backing store for cache (JSON file)")
+	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
+	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
 
+	// set up sigterm handling
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	pcache := make(PrefixCache)
+	// allocate and link cache
+	storage := new(CanidStorage)
+	storage.Version = CANID_STORAGE_VERSION
+	storage.Prefixes = new(PrefixCache)
+	storage.Prefixes.Data = make(map[string]PrefixInfo)
+	storage.Prefixes.expiry = *expiryflag
+	storage.Addresses = new(AddressCache)
+	storage.Addresses.Data = make(map[string]AddressInfo)
+	storage.Addresses.prefixes = storage.Prefixes
+	storage.Addresses.expiry = *expiryflag
 
+	// parse command line
 	flag.Parse()
 
 	// undump cache if filename given
 	if len(*fileflag) > 0 {
 		infile, ferr := os.Open(*fileflag)
 		if ferr == nil {
-			cerr := pcache.undump(infile)
+			cerr := storage.undump(infile)
 			infile.Close()
 			if cerr != nil {
 				log.Fatal(cerr)
 			}
-			log.Printf("loaded prefix cache from %s", *fileflag)
+			log.Printf("loaded caches from %s", *fileflag)
 		} else {
-			log.Printf("unable to read backing file %s : %s", *fileflag, ferr.Error())
+			log.Printf("unable to read cache file %s : %s", *fileflag, ferr.Error())
 		}
 	}
 
+	// check for cache version mismatch
+	if storage.Version != CANID_STORAGE_VERSION {
+		log.Fatal("storage version mismatch for cache file %s: delete and try again", *fileflag)
+	}
+
 	go func() {
-		http.HandleFunc("/prefix.json", pcache.lookupServer)
+		http.HandleFunc("/prefix.json", storage.Prefixes.lookupServer)
+		http.HandleFunc("/address.json", storage.Addresses.lookupServer)
 		log.Fatal(http.ListenAndServe(":8081", nil))
 	}()
 
@@ -263,7 +337,7 @@ func main() {
 	if len(*fileflag) > 0 {
 		outfile, ferr := os.Create(*fileflag)
 		if ferr == nil {
-			cerr := pcache.dump(outfile)
+			cerr := storage.dump(outfile)
 			outfile.Close()
 			if cerr != nil {
 				log.Fatal(cerr)
