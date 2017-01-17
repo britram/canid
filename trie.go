@@ -1,4 +1,4 @@
-package prefixcache
+package "github.com/britram/canid"
 
 import (
 	"strings"
