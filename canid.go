@@ -203,7 +203,7 @@ type AddressCache struct {
 	backend_limiter chan struct{}
 }
 
-func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
+func (cache *AddressCache) lookup(name string) (out AddressInfo) {
 	// Cache lookup
 	var ok bool
 	cache.lock.RLock()
@@ -223,10 +223,9 @@ func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
 	}
 
 	// Cache miss. Lookup.
-	var addrs []net.IP
 	out.Name = name
 	cache.backend_limiter <- struct{}{}
-	addrs, err = net.LookupIP(name)
+	addrs, err := net.LookupIP(name)
 	_ = <-cache.backend_limiter
 	if err == nil {
 		// we have addresses. precache prefix information.
@@ -236,8 +235,9 @@ func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
 			_, _ = cache.prefixes.lookup(addr)
 		}
 	} else {
-		out.Addresses = nil
+		out.Addresses = make([]net.IP, 0)
 		log.Printf("error looking up %s: %s", name, err.Error())
+		err = nil
 	}
 
 	// cache and return
@@ -257,14 +257,14 @@ func (cache *AddressCache) lookupServer(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	addr_info, err := cache.lookup(name)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		error_struct := struct{ Error string }{err.Error()}
-		error_body, _ := json.Marshal(error_struct)
-		w.Write(error_body)
-		return
-	}
+	addr_info := cache.lookup(name)
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	error_struct := struct{ Error string }{err.Error()}
+	// 	error_body, _ := json.Marshal(error_struct)
+	// 	w.Write(error_body)
+	// 	return
+	// }
 
 	addr_body, _ := json.Marshal(addr_info)
 	w.Write(addr_body)
