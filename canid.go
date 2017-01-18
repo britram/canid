@@ -141,6 +141,7 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 				cache.lock.Lock()
 				delete(cache.Data, prefix)
 				cache.lock.Unlock()
+				break
 			} else {
 				log.Printf("cache hit! for prefix %s", prefix)
 				return out, nil
@@ -308,15 +309,15 @@ func main() {
 	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
 	limitflag := flag.Int("concurrency", 16, "simultaneous backend request limit")
 
+	// parse command line
+	flag.Parse()
+
 	// set up sigterm handling
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
 	// allocate and link cache
 	storage := newStorage(*expiryflag, *limitflag)
-
-	// parse command line
-	flag.Parse()
 
 	// undump cache if filename given
 	if len(*fileflag) > 0 {
