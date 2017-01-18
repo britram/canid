@@ -108,9 +108,10 @@ func lookupRipestat(addr net.IP) (out PrefixInfo, err error) {
 // Map of prefixes to information about them, stored by prefix.
 
 type PrefixCache struct {
-	Data   map[string]PrefixInfo
-	lock   sync.RWMutex
-	expiry int
+	Data            map[string]PrefixInfo
+	lock            sync.RWMutex
+	expiry          int
+	backend_limiter chan struct{}
 }
 
 func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
@@ -148,7 +149,9 @@ func (cache *PrefixCache) lookup(addr net.IP) (out PrefixInfo, err error) {
 	}
 
 	// Cache miss, go ask RIPE
+	cache.backend_limiter <- struct{}{}
 	out, err = lookupRipestat(addr)
+	_ = <-cache.backend_limiter
 	if err != nil {
 		return
 	}
@@ -193,10 +196,11 @@ type AddressInfo struct {
 }
 
 type AddressCache struct {
-	Data     map[string]AddressInfo
-	lock     sync.RWMutex
-	prefixes *PrefixCache
-	expiry   int
+	Data            map[string]AddressInfo
+	lock            sync.RWMutex
+	prefixes        *PrefixCache
+	expiry          int
+	backend_limiter chan struct{}
 }
 
 func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
@@ -221,7 +225,9 @@ func (cache *AddressCache) lookup(name string) (out AddressInfo, err error) {
 	// Cache miss. Lookup.
 	var addrs []net.IP
 	out.Name = name
+	cache.backend_limiter <- struct{}{}
 	addrs, err = net.LookupIP(name)
+	_ = <-cache.backend_limiter
 	if err == nil {
 		// we have addresses. precache prefix information.
 		out.Addresses = addrs
@@ -282,29 +288,32 @@ func (storage *CanidStorage) dump(out io.Writer) error {
 	return enc.Encode(*storage)
 }
 
-func newStorage(expiry int) *CanidStorage {
+func newStorage(expiry int, limit int) *CanidStorage {
 	storage := new(CanidStorage)
 	storage.Version = CANID_STORAGE_VERSION
 	storage.Prefixes = new(PrefixCache)
 	storage.Prefixes.Data = make(map[string]PrefixInfo)
 	storage.Prefixes.expiry = expiry
+	storage.Prefixes.backend_limiter = make(chan struct{}, limit)
 	storage.Addresses = new(AddressCache)
 	storage.Addresses.Data = make(map[string]AddressInfo)
 	storage.Addresses.prefixes = storage.Prefixes
 	storage.Addresses.expiry = expiry
+	storage.Addresses.backend_limiter = make(chan struct{}, limit)
 	return storage
 }
 
 func main() {
 	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
 	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
+	limitflag := flag.Int("concurrency", 16, "simultaneous backend request limit")
 
 	// set up sigterm handling
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
 	// allocate and link cache
-	storage := newStorage(*expiryflag)
+	storage := newStorage(*expiryflag, *limitflag)
 
 	// parse command line
 	flag.Parse()
