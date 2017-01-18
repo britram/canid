@@ -22,12 +22,16 @@ import (
 type RipeStatResponse struct {
 	Status string
 	Data   struct {
-		Resource string
-		ASNs     []struct {
+		Resource         string
+		Is_Less_Specific bool
+		ASNs             []struct {
 			ASN int
 		}
 		Locations []struct {
 			Country string
+		}
+		Block struct {
+			Resource string
 		}
 	}
 }
@@ -79,7 +83,12 @@ func callRipestat(apiurl string, addr net.IP, out *PrefixInfo) error {
 
 	// store the prefix, if not already present
 	if len(out.Prefix) == 0 {
-		out.Prefix = doc.Data.Resource
+		if doc.Data.Is_Less_Specific {
+			out.Prefix = doc.Data.Resource
+		} else {
+			// if the resource isn't a prefix, look for the block
+			out.Prefix = doc.Data.Block.Resource
+		}
 	}
 
 	// get the first AS number, if present
