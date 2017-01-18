@@ -315,7 +315,7 @@ func newStorage(expiry int, limit int) *CanidStorage {
 
 func main() {
 	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
-	expiryflag := flag.Int("expiry", 600, "expire cache entries after n sec")
+	expiryflag := flag.Int("expiry", 86400, "expire cache entries after n sec")
 	limitflag := flag.Int("concurrency", 16, "simultaneous backend request limit")
 
 	// parse command line
