@@ -15,3 +15,14 @@ canid has two entry points:
     - Addresses: array of IP addresses associated with the name, as a string
     - Cached: Timestamp at which the result was cached from DNS
 
+To install:
+
+```
+$ go install github.com/britram/canid/canid
+```
+
+For usage:
+
+```
+$ canid -help
+```

@@ -1,7 +1,7 @@
-package prefixcache
+package canid
 
 import (
-	"strings"
+	"net"
 )
 
 // Trie for storing fast lookups of information by prefix.
@@ -9,11 +9,11 @@ import (
 
 type Trie struct {
 	sub  [2]*Trie
-	data *map[string]string
+	data interface{}
 }
 
 // Return the prefix and data associated with a given IP address in the trie
-func (t *Trie) Find(addr net.IP) (pfx net.IPNet, data map[string]string, err error) {
+func (t *Trie) Find(addr net.IP) (pfx net.IPNet, data interface{}, ok bool) {
 
 	addrmasks := [8]byte{0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01}
 	netmask := make([]byte, len(addr))
@@ -24,30 +24,34 @@ func (t *Trie) Find(addr net.IP) (pfx net.IPNet, data map[string]string, err err
 		// return data if the current trie node is a leaf
 		if current.data != nil {
 			cnetmask := net.IPMask(netmask)
-			return net.IPNet{addr.Mask(cnetmask), cnetmask}, *current.data, nil
+			return net.IPNet{addr.Mask(cnetmask), cnetmask}, current.data, true
 		}
 
 		// otherwise determine whether to go right or left
+		var branch int
 		if addr[pfxlen/8]&addrmasks[pfxlen%8] == 0 {
-			current = current.sub[0]
+			branch = 0
 		} else {
-			current = current.sub[1]
+			branch = 1
 		}
 
-		// check for empty trie
-		if current == nil {
+		current = current.sub[branch]
 
+		// stop searching if nil
+		if current == nil {
+			break
 		}
 
 		// and move to the next bit
 		netmask[pfxlen/8] |= addrmasks[pfxlen%8]
 	}
 
+	return net.IPNet{}, nil, false
 }
 
 // Add a prefix to the trie and associate some data with it
 
-func (t *Trie) Add(pfx net.IPNet, data map[string]string) {
+func (t *Trie) Add(pfx net.IPNet, data interface{}) {
 	addrmasks := [8]byte{0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01}
 
 	current := t
@@ -63,12 +67,12 @@ func (t *Trie) Add(pfx net.IPNet, data map[string]string) {
 		}
 
 		if current.sub[subidx] == nil {
-			current.sub[subidx] = make(Trie)
+			current.sub[subidx] = new(Trie)
 		}
 		current = current.sub[subidx]
 	}
 
 	/* now add data */
-	current.data = &data
+	current.data = data
 
 }
