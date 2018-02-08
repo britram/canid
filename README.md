@@ -10,7 +10,7 @@ canid has two entry points:
     - CountryCode: First country code associated with the prefix by RIPEstat
     - Cached: Timestamp at which the result was cached from RIPEstat
 
-- `/addresses.json?name=<Internet name>` looks up the IPv4 and IPv6 addresses associated with a given name. It caches the results by name in memory, and precaches prefix results for a subsequent prefix call. It returns a JSON object with three keys:
+- `/address.json?name=<Internet name>` looks up the IPv4 and IPv6 addresses associated with a given name. It caches the results by name in memory, and precaches prefix results for a subsequent prefix call. It returns a JSON object with three keys:
     - Name: the name looked up
     - Addresses: array of IP addresses associated with the name, as a string
     - Cached: Timestamp at which the result was cached from DNS
