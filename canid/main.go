@@ -14,7 +14,7 @@ import (
 )
 
 // WelcomePage contains the Canid welcome page, which explains what Canid is,
-// and gives a simple web interface to the service. This is copied from welcome.html.
+// and gives a simple web interface to the service.
 const WelcomePage = `
 <!DOCTYPE html>
 <html>
@@ -170,27 +170,27 @@ const WelcomePage = `
 </html>
 `
 
-const CanidStorageVersion = 1
+const canidStorageVersion = 1
 
-type CanidStorage struct {
+type canidStorage struct {
 	Version   int
 	Prefixes  *canid.PrefixCache
 	Addresses *canid.AddressCache
 }
 
-func (storage *CanidStorage) undump(in io.Reader) error {
+func (storage *canidStorage) undump(in io.Reader) error {
 	dec := json.NewDecoder(in)
 	return dec.Decode(storage)
 }
 
-func (storage *CanidStorage) dump(out io.Writer) error {
+func (storage *canidStorage) dump(out io.Writer) error {
 	enc := json.NewEncoder(out)
 	return enc.Encode(*storage)
 }
 
-func newStorage(expiry int, limit int) *CanidStorage {
-	storage := new(CanidStorage)
-	storage.Version = CanidStorageVersion
+func newStorage(expiry int, limit int) *canidStorage {
+	storage := new(canidStorage)
+	storage.Version = canidStorageVersion
 	storage.Prefixes = canid.NewPrefixCache(expiry, limit)
 	storage.Addresses = canid.NewAddressCache(expiry, limit, storage.Prefixes)
 	return storage
@@ -206,12 +206,12 @@ func main() {
 	fileflag := flag.String("file", "", "backing store for caches (JSON file)")
 	expiryflag := flag.Int("expiry", 86400, "expire cache entries after n sec")
 	limitflag := flag.Int("concurrency", 16, "simultaneous backend request limit")
-	portflag := flag.Int("port", 8081, "port to listen on")
+	portflag := flag.Int("port", 8043, "port to listen on")
 
 	// parse command line
 	flag.Parse()
 
-	// set up sigterm handling
+	// set up sigint handling
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
@@ -234,8 +234,8 @@ func main() {
 	}
 
 	// check for cache version mismatch
-	if storage.Version != CanidStorageVersion {
-		log.Fatal("storage version mismatch for cache file %s: delete and try again", *fileflag)
+	if storage.Version != canidStorageVersion {
+		log.Fatalf("storage version mismatch for cache file %s: delete and try again", *fileflag)
 	}
 
 	go func() {
