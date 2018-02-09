@@ -2,7 +2,7 @@
 
 ## SYNOPSIS
 
-`canid` [-file _&lt;cachefile&gt;_] [-expiry _&lt;sec&gt;_] [-concurrency _&lt;n&gt;_] [-port _&lt;port&gt;_]
+`canid` [-file <cachefile>] [-expiry <sec>] [-concurrency <n>] [-port <port>]
 
 ## DESCRIPTION
 
@@ -13,25 +13,19 @@ IP addresses. It is designed for use when looking up many addresses and/
 On launch, Canid begins serving on the specified port. It shuts down cleanly
 on SIGINT (^C on the console).
 
-## INSTALLING
-
-```
-$ go install github.com/britram/canid/canid
-```
-
 ## OPTIONS
 
-  * `-file` _&lt;cachefile&gt;_ (default: no backing store)
+  * `-file` <cachefile> (default: no backing store)
     Use the given JSON file as a backing store for the cache.
     Loads the cache from this file on startup, and saves it on termination.
 
-  * `-expiry` _&lt;sec&gt;_ (default: 86400, 1 day)
-    Expire cache entries after _&lt;sec&gt;_ seconds.
+  * `-expiry` <sec> (default: 86400, 1 day)
+    Expire cache entries after <sec> seconds.
 
-  * `-concurrency` _&lt;n&gt;_ (default: 16)
-    Allow at most _&lt;n&gt;_ simultaneous pending requests per backend.
+  * `-concurrency` <n> (default: 16)
+    Allow at most <n> simultaneous pending requests per backend.
 
-  * `-port` _&lt;port&gt;_ (default: 8043)
+  * `-port` <port> (default: 8043)
     TCP port to listen on
 
 ## RESOURCES
@@ -75,4 +69,26 @@ The `address.json` resource uses DNS, as provided by the Go standard library's
 
 ## AUTHOR
 
-Brian Trammell _&lt;brian@trammell.ch&gt;_
+Brian Trammell <brian@trammell.ch>
+
+## LICENSE
+
+Copyright (c) 2016 - 2018 Brian Trammell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

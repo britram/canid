@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='content-type' value='text/html;charset=utf8'>
+  <meta name='generator' value='Ronn/v0.7.3 (http://github.com/rtomayko/ronn/tree/0.7.3)'>
+  <title>canid(1) - the caching additional network information daemon</title>
+  <style type='text/css' media='all'>
+  /* style: man */
+  body#manpage {margin:0}
+  .mp {max-width:100ex;padding:0 9ex 1ex 4ex}
+  .mp p,.mp pre,.mp ul,.mp ol,.mp dl {margin:0 0 20px 0}
+  .mp h2 {margin:10px 0 0 0}
+  .mp > p,.mp > pre,.mp > ul,.mp > ol,.mp > dl {margin-left:8ex}
+  .mp h3 {margin:0 0 0 4ex}
+  .mp dt {margin:0;clear:left}
+  .mp dt.flush {float:left;width:8ex}
+  .mp dd {margin:0 0 0 9ex}
+  .mp h1,.mp h2,.mp h3,.mp h4 {clear:left}
+  .mp pre {margin-bottom:20px}
+  .mp pre+h2,.mp pre+h3 {margin-top:22px}
+  .mp h2+pre,.mp h3+pre {margin-top:5px}
+  .mp img {display:block;margin:auto}
+  .mp h1.man-title {display:none}
+  .mp,.mp code,.mp pre,.mp tt,.mp kbd,.mp samp,.mp h3,.mp h4 {font-family:monospace;font-size:14px;line-height:1.42857142857143}
+  .mp h2 {font-size:16px;line-height:1.25}
+  .mp h1 {font-size:20px;line-height:2}
+  .mp {text-align:justify;background:#fff}
+  .mp,.mp code,.mp pre,.mp pre code,.mp tt,.mp kbd,.mp samp {color:#131211}
+  .mp h1,.mp h2,.mp h3,.mp h4 {color:#030201}
+  .mp u {text-decoration:underline}
+  .mp code,.mp strong,.mp b {font-weight:bold;color:#131211}
+  .mp em,.mp var {font-style:italic;color:#232221;text-decoration:none}
+  .mp a,.mp a:link,.mp a:hover,.mp a code,.mp a pre,.mp a tt,.mp a kbd,.mp a samp {color:#0000ff}
+  .mp b.man-ref {font-weight:normal;color:#434241}
+  .mp pre {padding:0 4ex}
+  .mp pre code {font-weight:normal;color:#434241}
+  .mp h2+pre,h3+pre {padding-left:0}
+  ol.man-decor,ol.man-decor li {margin:3px 0 10px 0;padding:0;float:left;width:33%;list-style-type:none;text-transform:uppercase;color:#999;letter-spacing:1px}
+  ol.man-decor {width:100%}
+  ol.man-decor li.tl {text-align:left}
+  ol.man-decor li.tc {text-align:center;letter-spacing:4px}
+  ol.man-decor li.tr {text-align:right;float:right}
+  </style>
+</head>
+<!--
+  The following styles are deprecated and will be removed at some point:
+  div#man, div#man ol.man, div#man ol.head, div#man ol.man.
+
+  The .man-page, .man-decor, .man-head, .man-foot, .man-title, and
+  .man-navigation should be used instead.
+-->
+<body id='manpage'>
+  <div class='mp' id='man'>
+
+  <div class='man-navigation' style='display:none'>
+    <a href="#NAME">NAME</a>
+    <a href="#SYNOPSIS">SYNOPSIS</a>
+    <a href="#DESCRIPTION">DESCRIPTION</a>
+    <a href="#OPTIONS">OPTIONS</a>
+    <a href="#RESOURCES">RESOURCES</a>
+    <a href="#BACKENDS">BACKENDS</a>
+    <a href="#AUTHOR">AUTHOR</a>
+    <a href="#LICENSE">LICENSE</a>
+  </div>
+
+  <ol class='man-decor man-head man head'>
+    <li class='tl'>canid(1)</li>
+    <li class='tc'></li>
+    <li class='tr'>canid(1)</li>
+  </ol>
+
+  <h2 id="NAME">NAME</h2>
+<p class="man-name">
+  <code>canid</code> - <span class="man-whatis">the caching additional network information daemon</span>
+</p>
+
+<h2 id="SYNOPSIS">SYNOPSIS</h2>
+
+<p><code>canid</code> [-file <var>cachefile</var>] [-expiry <var>sec</var>] [-concurrency <var>n</var>] [-port <var>port</var>]</p>
+
+<h2 id="DESCRIPTION">DESCRIPTION</h2>
+
+<p>Canid provides a simple web service for caching and simplifying information
+retrieved from other services (see <a href="#BACKENDS" title="BACKENDS" data-bare-link="true">BACKENDS</a>) about Internet hostnames and
+IP addresses. It is designed for use when looking up many addresses and/</p>
+
+<p>On launch, Canid begins serving on the specified port. It shuts down cleanly
+on SIGINT (^C on the console).</p>
+
+<h2 id="OPTIONS">OPTIONS</h2>
+
+<ul>
+<li><p><code>-file</code> <var>cachefile</var> (default: no backing store)
+Use the given JSON file as a backing store for the cache.
+Loads the cache from this file on startup, and saves it on termination.</p></li>
+<li><p><code>-expiry</code> <var>sec</var> (default: 86400, 1 day)
+Expire cache entries after <var>sec</var> seconds.</p></li>
+<li><p><code>-concurrency</code> <var>n</var> (default: 16)
+Allow at most <var>n</var> simultaneous pending requests per backend.</p></li>
+<li><p><code>-port</code> <var>port</var> (default: 8043)
+TCP port to listen on</p></li>
+</ul>
+
+
+<h2 id="RESOURCES">RESOURCES</h2>
+
+<p>Canid provides three resources via HTTP:</p>
+
+<ul>
+<li><p><code>/</code></p>
+
+<p>The root resource is an HTML page providing a simple web
+front-end to the service.</p></li>
+<li><p><code>/prefix.json?addr=</code></p>
+
+<p>Look up information about the prefix associated with an address, and
+return it as a JSON object. This object presently contains a <code>Prefix</code> key
+with the routed prefix associated with the address, an <code>ASN</code> key with a
+BGP autonomous system number associated with the address, and a
+<code>CountryCode</code> key for an ISO 3166 country code associated with the
+address.</p></li>
+<li><p><code>/address.json?name=</code></p>
+
+<p>Look up an Internet hostname via DNS, and return the IPv4 and IPv6
+addresses associated with it as a JSON object. This object contains a
+<code>Name</code> key with the name looked up, and an <code>Addresses</code> key containing an
+array of IPv4 and/or IPv6 addresses as strings. Looking up an address for
+a name will cause prefix information for all addresses found to be cached,
+as well.</p></li>
+</ul>
+
+
+<p>All JSON resources also contain a <code>Cached</code> key, the time at which the data
+entry was put into the cache in
+[RFC3339][https://datatracker.ietf.org/doc/RFC3339] format.</p>
+
+<h2 id="BACKENDS">BACKENDS</h2>
+
+<p>The <code>prefix.json</code> resource currently uses the Prefix Overview and Geolocation
+API entry points from [RIPEstat][https://stat.ripe.net].</p>
+
+<p>The <code>address.json</code> resource uses DNS, as provided by the Go standard library's
+<code>net.LookupIP()</code> (i.e., the system resolver)</p>
+
+<h2 id="AUTHOR">AUTHOR</h2>
+
+<p>Brian Trammell <a href="&#x6d;&#97;&#105;&#x6c;&#x74;&#111;&#58;&#x62;&#114;&#105;&#97;&#110;&#x40;&#x74;&#x72;&#x61;&#109;&#x6d;&#x65;&#x6c;&#108;&#x2e;&#x63;&#104;" data-bare-link="true">&#x62;&#x72;&#x69;&#97;&#x6e;&#x40;&#116;&#x72;&#x61;&#109;&#109;&#x65;&#108;&#x6c;&#46;&#x63;&#x68;</a></p>
+
+<h2 id="LICENSE">LICENSE</h2>
+
+<p>Copyright (c) 2016 - 2018 Brian Trammell</p>
+
+<p>Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:</p>
+
+<p>The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.</p>
+
+<p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</p>
+
+
+  <ol class='man-decor man-foot man foot'>
+    <li class='tl'></li>
+    <li class='tc'>February 2018</li>
+    <li class='tr'>canid(1)</li>
+  </ol>
+
+  </div>
+</body>
+</html>

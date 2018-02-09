@@ -1,0 +1,79 @@
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
+.TH "CANID" "1" "February 2018" "" ""
+.
+.SH "NAME"
+\fBcanid\fR \- the caching additional network information daemon
+.
+.SH "SYNOPSIS"
+\fBcanid\fR [\-file \fIcachefile\fR] [\-expiry \fIsec\fR] [\-concurrency \fIn\fR] [\-port \fIport\fR]
+.
+.SH "DESCRIPTION"
+Canid provides a simple web service for caching and simplifying information retrieved from other services (see \fIBACKENDS\fR) about Internet hostnames and IP addresses\. It is designed for use when looking up many addresses and/
+.
+.P
+On launch, Canid begins serving on the specified port\. It shuts down cleanly on SIGINT (^C on the console)\.
+.
+.SH "OPTIONS"
+.
+.IP "\(bu" 4
+\fB\-file\fR \fIcachefile\fR (default: no backing store) Use the given JSON file as a backing store for the cache\. Loads the cache from this file on startup, and saves it on termination\.
+.
+.IP "\(bu" 4
+\fB\-expiry\fR \fIsec\fR (default: 86400, 1 day) Expire cache entries after \fIsec\fR seconds\.
+.
+.IP "\(bu" 4
+\fB\-concurrency\fR \fIn\fR (default: 16) Allow at most \fIn\fR simultaneous pending requests per backend\.
+.
+.IP "\(bu" 4
+\fB\-port\fR \fIport\fR (default: 8043) TCP port to listen on
+.
+.IP "" 0
+.
+.SH "RESOURCES"
+Canid provides three resources via HTTP:
+.
+.IP "\(bu" 4
+\fB/\fR
+.
+.IP
+The root resource is an HTML page providing a simple web front\-end to the service\.
+.
+.IP "\(bu" 4
+\fB/prefix\.json?addr=\fR
+.
+.IP
+Look up information about the prefix associated with an address, and return it as a JSON object\. This object presently contains a \fBPrefix\fR key with the routed prefix associated with the address, an \fBASN\fR key with a BGP autonomous system number associated with the address, and a \fBCountryCode\fR key for an ISO 3166 country code associated with the address\.
+.
+.IP "\(bu" 4
+\fB/address\.json?name=\fR
+.
+.IP
+Look up an Internet hostname via DNS, and return the IPv4 and IPv6 addresses associated with it as a JSON object\. This object contains a \fBName\fR key with the name looked up, and an \fBAddresses\fR key containing an array of IPv4 and/or IPv6 addresses as strings\. Looking up an address for a name will cause prefix information for all addresses found to be cached, as well\.
+.
+.IP "" 0
+.
+.P
+All JSON resources also contain a \fBCached\fR key, the time at which the data entry was put into the cache in [RFC3339][https://datatracker\.ietf\.org/doc/RFC3339] format\.
+.
+.SH "BACKENDS"
+The \fBprefix\.json\fR resource currently uses the Prefix Overview and Geolocation API entry points from [RIPEstat][https://stat\.ripe\.net]\.
+.
+.P
+The \fBaddress\.json\fR resource uses DNS, as provided by the Go standard library\'s \fBnet\.LookupIP()\fR (i\.e\., the system resolver)
+.
+.SH "AUTHOR"
+Brian Trammell \fIbrian@trammell\.ch\fR
+.
+.SH "LICENSE"
+Copyright (c) 2016 \- 2018 Brian Trammell
+.
+.P
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+.
+.P
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software\.
+.
+.P
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT\. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE\.

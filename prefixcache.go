@@ -97,7 +97,7 @@ func (cache *PrefixCache) LookupServer(w http.ResponseWriter, req *http.Request)
 
 	prefix_info, err := cache.Lookup(ip)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError) // FIXME not always a 500
 		error_struct := struct{ Error string }{err.Error()}
 		error_body, _ := json.Marshal(error_struct)
 		w.Write(error_body)
