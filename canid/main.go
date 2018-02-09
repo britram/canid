@@ -105,6 +105,7 @@ const WelcomePage = `
 
         const inputElement = document.getElementById('input')
         const statusElement = document.getElementById('status')
+        const addressElement = document.getElementById('address')
         const prefixElement = document.getElementById('prefix')
         const asElement = document.getElementById('as')
         const ccElement = document.getElementById('cc')
@@ -114,6 +115,7 @@ const WelcomePage = `
           let result = await response.json()
 
           statusElement.value = "prefix lookup "+inputElement.value+" OK"
+          addressElement.value = ""
           prefixElement.value = result.Prefix 
           asElement.value = result.ASN 
           ccElement.value = result.CountryCode 
@@ -122,6 +124,34 @@ const WelcomePage = `
           console.log(error)
         }
       }
+
+      async function canidLookupAddress() {
+
+        const inputElement = document.getElementById('input')
+        const statusElement = document.getElementById('status')
+        const addressElement = document.getElementById('address')
+        const prefixElement = document.getElementById('prefix')
+        const asElement = document.getElementById('as')
+        const ccElement = document.getElementById('cc')
+
+        try {
+          let response = await fetch("/address.json?name="+encodeURIComponent(inputElement.value))
+          let result = await response.json()
+
+          statusElement.value = "address lookup "+inputElement.value+" OK"
+          if (result.Addresses.length < 1) {
+            addressElement.value = "[none]"
+          } else {
+            addressElement.value = result.Addresses[0]
+          }
+          prefixElement.value = ""
+          asElement.value = ""
+          ccElement.value = "" 
+        } catch (error) {
+          statusElement.value = "address lookup "+inputElement.value+" failed; see console"
+          console.log(error)
+        }
+}
 
     </script>
   </head>
@@ -151,23 +181,29 @@ const WelcomePage = `
         </div>
 
         <div>
+          <label>(First) Address:</label> <input type="text" disabled id="address">
+        </div>
+
+        <div>
             <label>Prefix:</label> <input type="text" disabled id="prefix">
         </div>
   
         <div>
-            <label>BGP ASN:</label> <input type="text" disabled id="prefix">
+            <label>BGP ASN:</label> <input type="text" disabled id="as">
         </div>
 
         <div>
-            <label>Country:</label> <input type="text" disabled id="prefix">
+            <label>Country:</label> <input type="text" disabled id="cc">
         </div>
 
         <input type="button" id="pfxGoButton" onclick="canidLookupPrefix()" value="Look up prefix">
+        <input type="button" id="pfxGoButton" onclick="canidLookupAddress()" value="Look up name">
 
       </form></div>
     </div>
   </body>
 </html>
+
 `
 
 const canidStorageVersion = 1
