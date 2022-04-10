@@ -10,7 +10,7 @@ import (
 )
 
 // Structure partially covering the output of RIPEstat's prefix overview and
-// geolocation API calls, for decoding JSON reponses from RIPEstat.
+// geolocation API calls, for decoding JSON responses from RIPEstat.
 
 type RipeStatResponse struct {
 	Status string
